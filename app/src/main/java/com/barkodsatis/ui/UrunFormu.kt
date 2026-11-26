@@ -32,11 +32,13 @@ fun UrunFormu(
     var barkod by remember { mutableStateOf(baslangic.barkod) }
     var ad by remember { mutableStateOf(baslangic.ad) }
     var fiyat by remember { mutableStateOf(if (baslangic.fiyat > 0) baslangic.fiyat.toString().replace('.', ',') else "") }
+    var stok by remember { mutableStateOf(baslangic.stok.toString()) }
     var iskonto by remember { mutableStateOf(if (baslangic.iskontoYuzde > 0) FisPdf.yuzde(baslangic.iskontoYuzde) else "") }
 
     val f = ExcelOkuyucu.sayi(fiyat)
     val i = if (iskonto.isBlank()) 0.0 else ExcelOkuyucu.sayi(iskonto)
-    val gecerli = barkod.isNotBlank() && ad.isNotBlank() && f != null && f > 0 && i != null && i in 0.0..100.0
+    val st = stok.trim().ifEmpty { "0" }.toIntOrNull()
+    val gecerli = st != null && barkod.isNotBlank() && ad.isNotBlank() && f != null && f > 0 && i != null && i in 0.0..100.0
 
     AlertDialog(
         onDismissRequest = iptal,
@@ -51,6 +53,8 @@ fun UrunFormu(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
                 OutlinedTextField(iskonto, { iskonto = it }, label = { Text("İskonto oranı (%)") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+                OutlinedTextField(stok, { stok = it }, label = { Text("Stok adedi") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                 if (f != null && i != null && i > 0) {
                     val ind = (f * i / 100).kurus()
                     Text("İndirim: ${para(ind)}  →  İndirimli fiyat: ${para(f - ind)}")
@@ -58,7 +62,7 @@ fun UrunFormu(
             }
         },
         confirmButton = {
-            TextButton(enabled = gecerli, onClick = { kaydet(Urun(barkod.trim(), ad.trim(), i ?: 0.0, f!!)) }) { Text("Kaydet") }
+            TextButton(enabled = gecerli, onClick = { kaydet(Urun(barkod.trim(), ad.trim(), i ?: 0.0, f!!, st ?: 0)) }) { Text("Kaydet") }
         },
         dismissButton = { TextButton(onClick = iptal) { Text("Vazgeç") } },
     )

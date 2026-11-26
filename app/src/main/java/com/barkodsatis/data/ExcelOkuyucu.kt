@@ -9,13 +9,13 @@ import java.util.zip.ZipInputStream
 
 /**
  * .xlsx dosyasından ürün listesi okur. Başlık satırında şu sütunlar aranır
- * (sıra önemsiz, büyük/küçük harf önemsiz): Barkod, Ürün Adı, Satış İskontosu, Fiyatı.
+ * (sıra önemsiz, büyük/küçük harf önemsiz): Barkod, Ürün Adı, Satış İskontosu, Fiyatı ve isteğe bağlı Stok.
  * Dışarıdan kütüphane kullanmaz: xlsx bir zip dosyasıdır, içindeki XML'ler doğrudan okunur.
  * Ayrıca noktalı virgül veya virgülle ayrılmış .csv dosyaları da okunur.
  */
 object ExcelOkuyucu {
 
-    data class Sonuc(val urunler: List<Urun>, val atlananSatirlar: List<Int>)
+    data class Sonuc(val urunler: List<Urun>, val atlananSatirlar: List<Int>, val stokSutunuVar: Boolean)
 
     class BicimHatasi(mesaj: String) : Exception(mesaj)
 
@@ -47,6 +47,7 @@ object ExcelOkuyucu {
         val cAd = sutun("urunadi", "urunad", "adi", "urun", "stokadi", "aciklama")
         val cIsk = sutun("iskonto", "indirim")
         val cFiyat = sutun("fiyat", "tutar")
+        val cStok = sutun("stok", "miktar", "adet")
         if (cAd < 0 || cFiyat < 0) throw BicimHatasi("\"Ürün Adı\" ve \"Fiyatı\" başlıkları bulunamadı.")
 
         val urunler = LinkedHashMap<String, Urun>()
@@ -63,9 +64,10 @@ object ExcelOkuyucu {
                 // Excel'de %10 hücresi 0.1 olarak saklanır
                 if (it > 0 && it < 1 && !hucre(cIsk).contains("%")) it * 100 else it
             } ?: 0.0
-            urunler[barkod] = Urun(barkod, ad, isk.coerceIn(0.0, 100.0), fiyat)
+            val stok = sayi(hucre(cStok))?.toInt() ?: 0
+            urunler[barkod] = Urun(barkod, ad, isk.coerceIn(0.0, 100.0), fiyat, stok)
         }
-        return Sonuc(urunler.values.toList(), atlanan)
+        return Sonuc(urunler.values.toList(), atlanan, cStok >= 0)
     }
 
     /** "8.69000000017E12" gibi bilimsel gösterimi ve "123.0" sonlarını düzeltir. */

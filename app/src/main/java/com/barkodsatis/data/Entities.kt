@@ -1,5 +1,6 @@
 package com.barkodsatis.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -12,6 +13,8 @@ data class Urun(
     val ad: String,
     val iskontoYuzde: Double,
     val fiyat: Double,
+    /** Eldeki stok adedi. Her satışta düşer, eksiye inebilir. */
+    @ColumnInfo(defaultValue = "0") val stok: Int = 0,
 )
 
 enum class OdemeTipi { NAKIT, KREDI_KARTI }
@@ -45,3 +48,21 @@ data class SatisSatiri(
     val birimFiyat: Double,
     val iskontoYuzde: Double,
 )
+
+/** Rapor için satış satırı + bağlı olduğu satışın bilgileri. */
+data class RaporSatiri(
+    val satisId: Long,
+    val zaman: Long,
+    val odemeTipi: OdemeTipi,
+    val barkod: String,
+    val ad: String,
+    val adet: Int,
+    val birimFiyat: Double,
+    val iskontoYuzde: Double,
+) {
+    val brut: Double get() = (birimFiyat * adet).kurus()
+    val iskontoTutari: Double get() = (brut * iskontoYuzde / 100).kurus()
+    val net: Double get() = (brut - iskontoTutari).kurus()
+}
+
+data class BarkodStok(val barkod: String, val stok: Int)

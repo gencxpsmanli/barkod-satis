@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.PointOfSale
 import androidx.compose.material3.Icon
@@ -26,6 +27,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.barkodsatis.ui.RaporEkrani
 import com.barkodsatis.ui.SatisEkrani
 import com.barkodsatis.ui.SatisViewModel
 import com.barkodsatis.ui.UrunlerEkrani
@@ -50,11 +52,17 @@ class MainActivity : ComponentActivity() {
                                 icon = { Icon(Icons.Default.PointOfSale, null) }, label = { Text("Satış") })
                             NavigationBarItem(selected = sekme == 1, onClick = { sekme = 1 },
                                 icon = { Icon(Icons.Default.Inventory2, null) }, label = { Text("Ürünler") })
+                            NavigationBarItem(selected = sekme == 2, onClick = { sekme = 2 },
+                                icon = { Icon(Icons.Default.Assessment, null) }, label = { Text("Rapor") })
                         }
                     },
                 ) { ic ->
                     Surface(Modifier.padding(ic)) {
-                        if (sekme == 0) SatisEkrani(vm) else UrunlerEkrani(vm)
+                        when (sekme) {
+                            0 -> SatisEkrani(vm)
+                            1 -> UrunlerEkrani(vm)
+                            else -> RaporEkrani(vm)
+                        }
                     }
                 }
             }

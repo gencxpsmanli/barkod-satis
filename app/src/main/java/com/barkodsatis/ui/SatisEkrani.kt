@@ -23,6 +23,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Remove
@@ -68,12 +70,37 @@ import androidx.core.content.ContextCompat
 import com.barkodsatis.data.OdemeTipi
 import com.barkodsatis.data.SepetSatiri
 import com.barkodsatis.data.Urun
+import com.barkodsatis.data.kurus
 import com.barkodsatis.fis.FisPdf
 import com.barkodsatis.fis.para
 
 private val Yesil = Color(0xFF2E7D32)
 private val Mavi = Color(0xFF1565C0)
 private val Kirmizi = Color(0xFFC62828)
+private val Turuncu = Color(0xFFE65100)
+
+@Composable
+private fun FiyatKarti(u: Urun, kapat: () -> Unit) {
+    val isk = (u.fiyat * u.iskontoYuzde / 100).kurus()
+    Card(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)),
+    ) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f)) {
+                Text("FİYAT", fontSize = 12.sp, color = Turuncu, fontWeight = FontWeight.Bold)
+                Text(u.ad, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Text("${u.barkod}   Stok: ${u.stok}", fontSize = 12.sp, color = Color.Gray)
+                if (u.iskontoYuzde > 0) {
+                    Text("Liste fiyatı: ${para(u.fiyat)}", textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough, color = Color.Gray)
+                    Text("İskonto %${FisPdf.yuzde(u.iskontoYuzde)}  →  -${para(isk)}", color = Kirmizi, fontWeight = FontWeight.SemiBold)
+                }
+                Text(para(u.fiyat - isk), fontSize = 32.sp, fontWeight = FontWeight.Bold)
+            }
+            IconButton(onClick = kapat) { Icon(Icons.Default.Close, "Kapat") }
+        }
+    }
+}
 
 @Composable
 fun SatisEkrani(vm: SatisViewModel) {
@@ -82,6 +109,8 @@ fun SatisEkrani(vm: SatisViewModel) {
     val bekleyenAdet by vm.bekleyenAdet.collectAsState()
     val bilinmeyen by vm.bilinmeyenBarkod.collectAsState()
     val sonSatis by vm.sonSatis.collectAsState()
+    val fiyatGorModu by vm.fiyatGorModu.collectAsState()
+    val fiyatKarti by vm.fiyatKarti.collectAsState()
 
     var barkodMetni by remember { mutableStateOf("") }
     var kameraAcik by rememberSaveable { mutableStateOf(false) }
@@ -122,8 +151,30 @@ fun SatisEkrani(vm: SatisViewModel) {
         }
 
         if (kameraAcik) {
-            BarkodKamera(Modifier.fillMaxWidth().height(160.dp).padding(top = 4.dp)) { vm.barkodOkundu(it) }
+            Box(Modifier.fillMaxWidth().height(170.dp).padding(top = 4.dp)) {
+                BarkodKamera(Modifier.fillMaxSize()) { vm.barkodOkundu(it) }
+                Button(
+                    onClick = { kameraAcik = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = Kirmizi),
+                    modifier = Modifier.align(Alignment.TopEnd).padding(6.dp),
+                ) { Icon(Icons.Default.Close, null); Spacer(Modifier.width(4.dp)); Text("Kamerayı kapat") }
+            }
         }
+
+        // Fiyat gör
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+            if (fiyatGorModu) {
+                Button(onClick = vm::fiyatGorDegistir, colors = ButtonDefaults.buttonColors(containerColor = Turuncu)) {
+                    Icon(Icons.Default.Sell, null); Spacer(Modifier.width(4.dp)); Text("FİYAT GÖR açık")
+                }
+                Text("  Fiyatını görmek istediğiniz ürünü okutun", fontSize = 13.sp, color = Turuncu, modifier = Modifier.weight(1f))
+            } else {
+                OutlinedButton(onClick = vm::fiyatGorDegistir) {
+                    Icon(Icons.Default.Sell, null); Spacer(Modifier.width(4.dp)); Text("FİYAT GÖR")
+                }
+            }
+        }
+        fiyatKarti?.let { FiyatKarti(it, vm::fiyatKartiKapat) }
 
         // 1-9 adet tuşları
         AdetTuslari(bekleyenAdet, vm::rakam, vm::adetTemizle)
@@ -151,7 +202,9 @@ fun SatisEkrani(vm: SatisViewModel) {
             Column(Modifier.padding(10.dp)) {
                 ToplamSatiri("Ürün adedi", sepet.urunAdedi.toString())
                 ToplamSatiri("Ara toplam", para(sepet.brutToplam))
-                ToplamSatiri("Toplam indirim", if (sepet.iskontoToplam > 0) "-" + para(sepet.iskontoToplam) else para(0.0), Kirmizi)
+                val oran = if (sepet.brutToplam > 0) sepet.iskontoToplam / sepet.brutToplam * 100 else 0.0
+                ToplamSatiri("Toplam indirim (%${FisPdf.yuzde(oran.kurus())})",
+                    if (sepet.iskontoToplam > 0) "-" + para(sepet.iskontoToplam) else para(0.0), Kirmizi)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("TOPLAM", fontWeight = FontWeight.Bold, fontSize = 22.sp)
                     Text(para(sepet.netToplam), fontWeight = FontWeight.Bold, fontSize = 26.sp)
@@ -242,10 +295,12 @@ private fun SepetSatirGorunumu(
         Column(Modifier.weight(1f)) {
             Text(satir.urun.ad, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("${satir.adet} x ${para(satir.urun.fiyat)}", fontSize = 13.sp, color = Color.DarkGray)
-            if (satir.urun.iskontoYuzde > 0) {
-                Text("İskonto %${FisPdf.yuzde(satir.urun.iskontoYuzde)}  →  -${para(satir.iskontoTutari)}",
-                    fontSize = 13.sp, color = Kirmizi)
-            }
+            Text(
+                if (satir.urun.iskontoYuzde > 0) "İskonto %${FisPdf.yuzde(satir.urun.iskontoYuzde)}  →  -${para(satir.iskontoTutari)}"
+                else "İskonto %0",
+                fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                color = if (satir.urun.iskontoYuzde > 0) Kirmizi else Color.Gray,
+            )
         }
         IconButton(onClick = azalt) { Icon(Icons.Default.Remove, "Azalt") }
         Text("${satir.adet}", fontSize = 18.sp, fontWeight = FontWeight.Bold)

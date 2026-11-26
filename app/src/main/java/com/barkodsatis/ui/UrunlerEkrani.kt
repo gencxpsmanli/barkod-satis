@@ -45,7 +45,7 @@ fun UrunlerEkrani(vm: SatisViewModel) {
     }
 
     Column(Modifier.fillMaxSize().padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Excel dosyasının ilk satırında şu başlıklar olmalı: Barkod, Ürün Adı, Satış İskontosu, Fiyatı. " +
+        Text("Excel dosyasının ilk satırında şu başlıklar olmalı: Barkod, Ürün Adı, Satış İskontosu, Fiyatı (isteğe bağlı: Stok). " +
             "ETA'dan Excel'e aktardığınız listeyi de aynı şekilde yükleyebilirsiniz. Aynı barkod tekrar gelirse güncellenir.",
             fontSize = 13.sp, color = Color.DarkGray)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -69,7 +69,7 @@ fun UrunlerEkrani(vm: SatisViewModel) {
                     verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(u.ad, fontWeight = FontWeight.SemiBold)
-                        Text(u.barkod, fontSize = 12.sp, color = Color.Gray)
+                        Text("${u.barkod}   Stok: ${u.stok}", fontSize = 12.sp, color = if (u.stok <= 0) Color(0xFFC62828) else Color.Gray)
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text(para(u.fiyat), fontWeight = FontWeight.Bold)
