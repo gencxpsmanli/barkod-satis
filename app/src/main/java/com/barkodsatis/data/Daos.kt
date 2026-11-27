@@ -25,6 +25,13 @@ interface UrunDao {
     @Upsert
     suspend fun kaydetHepsi(urunler: List<Urun>)
 
+    /** Barkod alanına yazılan metne göre öneri (ad içinde veya barkod başında). */
+    @Query("SELECT * FROM urunler WHERE ad LIKE '%' || :q || '%' OR barkod LIKE :q || '%' ORDER BY ad LIMIT 8")
+    suspend fun oneri(q: String): List<Urun>
+
+    @Query("DELETE FROM urunler WHERE barkod = :barkod")
+    suspend fun sil(barkod: String)
+
     @Query("SELECT barkod, stok FROM urunler")
     suspend fun tumStoklar(): List<BarkodStok>
 
@@ -53,8 +60,22 @@ abstract class SatisDao {
 
     @Query("""SELECT l.satisId, s.zaman, s.odemeTipi, l.barkod, l.ad, l.adet, l.birimFiyat, l.iskontoYuzde
         FROM satis_satirlari l JOIN satislar s ON s.id = l.satisId
-        WHERE s.zaman BETWEEN :bas AND :son ORDER BY s.zaman DESC, l.id""")
+        WHERE s.iptal = 0 AND s.zaman BETWEEN :bas AND :son ORDER BY s.zaman DESC, l.id""")
     abstract fun raporSatirlari(bas: Long, son: Long): Flow<List<RaporSatiri>>
+
+    @Query("SELECT * FROM satis_satirlari WHERE satisId = :satisId ORDER BY id")
+    abstract suspend fun satirlar(satisId: Long): List<SatisSatiri>
+
+    @Query("UPDATE satislar SET iptal = 1 WHERE id = :satisId AND iptal = 0")
+    abstract suspend fun iptalIsaretle(satisId: Long): Int
+
+    /** Fişi iptal eder ve satılan adetleri stoğa geri ekler. Zaten iptalse bir şey yapmaz. */
+    @Transaction
+    open suspend fun fisIptal(satisId: Long): Boolean {
+        if (iptalIsaretle(satisId) == 0) return false
+        satirlar(satisId).forEach { stokDus(it.barkod, -it.adet) }
+        return true
+    }
 
     @Query("SELECT * FROM satislar WHERE zaman BETWEEN :bas AND :son ORDER BY zaman DESC")
     abstract fun aralik(bas: Long, son: Long): Flow<List<Satis>>

@@ -118,7 +118,15 @@ fun SatisEkrani(vm: SatisViewModel) {
     val izinIste = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { kameraAcik = it }
     val listeDurumu = rememberLazyListState()
 
-    fun gonder() { vm.barkodOkundu(barkodMetni); barkodMetni = "" }
+    val oneriler by vm.oneriler.collectAsState()
+    fun metniAyarla(v: String) { barkodMetni = v; vm.barkodSorgu.value = v }
+    fun gonder() {
+        val m = barkodMetni.trim()
+        // Ürün adı yazılıp Enter'a basıldıysa ilk öneriyi seç
+        if (m.any { it.isLetter() } && oneriler.isNotEmpty()) vm.oneriSecildi(oneriler.first())
+        else vm.barkodOkundu(m)
+        metniAyarla("")
+    }
 
     // Harici/Bluetooth okuyucu klavye gibi yazar: barkod alanı hep odakta kalsın.
     LaunchedEffect(bilinmeyen, sonSatis) { if (bilinmeyen == null && sonSatis == null) runCatching { odak.requestFocus() } }
@@ -131,9 +139,9 @@ fun SatisEkrani(vm: SatisViewModel) {
                 value = barkodMetni,
                 onValueChange = { v ->
                     // Bazı okuyucular sonuna satır sonu ekler
-                    if (v.endsWith("\n") || v.endsWith("\r")) { barkodMetni = v.trim(); gonder() } else barkodMetni = v
+                    if (v.endsWith("\n") || v.endsWith("\r")) { barkodMetni = v.trim(); gonder() } else metniAyarla(v)
                 },
-                label = { Text("Barkod okutun veya yazın") },
+                label = { Text("Barkod okutun, yazın veya ürün adı arayın") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { gonder() }),
@@ -148,6 +156,27 @@ fun SatisEkrani(vm: SatisViewModel) {
                 else izinIste.launch(Manifest.permission.CAMERA)
             }) { Icon(Icons.Default.PhotoCamera, "Kamera", tint = if (kameraAcik) Mavi else Color.Gray) }
             IconButton(onClick = vm::yeniUrunFormu) { Icon(Icons.Default.Add, "Elle ürün ekle") }
+        }
+
+        // Ürün adıyla arama önerileri
+        if (barkodMetni.trim().length >= 2 && oneriler.isNotEmpty()) {
+            Card(Modifier.fillMaxWidth().padding(top = 2.dp)) {
+                Column {
+                    oneriler.forEach { u ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { vm.oneriSecildi(u); metniAyarla("") }.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(u.ad, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text("${u.barkod}   Stok: ${u.stok}", fontSize = 12.sp, color = Color.Gray)
+                            }
+                            Text(para(u.fiyat), fontWeight = FontWeight.Bold)
+                        }
+                        HorizontalDivider()
+                    }
+                }
+            }
         }
 
         if (kameraAcik) {

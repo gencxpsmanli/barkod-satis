@@ -60,7 +60,7 @@ class MainActivity : ComponentActivity() {
                     Surface(Modifier.padding(ic)) {
                         when (sekme) {
                             0 -> SatisEkrani(vm)
-                            1 -> UrunlerEkrani(vm)
+                            1 -> UrunlerEkrani(vm, satisaGit = { sekme = 0 })
                             else -> RaporEkrani(vm)
                         }
                     }

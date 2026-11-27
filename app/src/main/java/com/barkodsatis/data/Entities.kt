@@ -27,6 +27,8 @@ data class Satis(
     val brutToplam: Double,
     val iskontoToplam: Double,
     val netToplam: Double,
+    /** İptal edilen fiş raporlara girmez, stoğu geri eklenmiştir. */
+    @ColumnInfo(defaultValue = "0") val iptal: Boolean = false,
 )
 
 @Entity(

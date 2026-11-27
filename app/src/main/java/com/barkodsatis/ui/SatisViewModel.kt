@@ -27,7 +27,11 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.FlowPreview
+import androidx.room.withTransaction
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -178,21 +182,54 @@ class SatisViewModel(app: Application) : AndroidViewModel(app) {
     private fun adetAl(): Int = (_bekleyenAdet.value.toIntOrNull() ?: 1).coerceAtLeast(1).also { _bekleyenAdet.value = "" }
 
     // ---- Barkod ----
+    /** Barkod alanına yazılan metin: ürün adıyla arama önerileri için. */
+    val barkodSorgu = MutableStateFlow("")
+
+    @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
+    val oneriler: StateFlow<List<Urun>> = barkodSorgu
+        .debounce(200)
+        .mapLatest { q -> val t = q.trim(); if (t.length < 2) emptyList() else db.urunDao().oneri(t) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     fun barkodOkundu(ham: String) {
         val barkod = ham.trim()
+        barkodSorgu.value = ""
         if (barkod.isEmpty() || _bilinmeyenBarkod.value != null) return
         viewModelScope.launch {
             val urun = db.urunDao().bul(barkod)
-            if (_fiyatGorModu.value) {
-                _fiyatGorModu.value = false
-                if (urun == null) { _fiyatKarti.value = null; _mesaj.value = "Bu barkod kayıtlı değil: $barkod" }
-                else _fiyatKarti.value = urun
-                return@launch
-            }
-            _fiyatKarti.value = null
-            if (urun == null) _bilinmeyenBarkod.value = barkod
-            else _sepet.update { it.ekle(urun, adetAl()) }
+            if (urun == null) {
+                if (_fiyatGorModu.value) {
+                    _fiyatGorModu.value = false; _fiyatKarti.value = null
+                    _mesaj.value = "Bu barkod kayıtlı değil: $barkod"
+                } else {
+                    _fiyatKarti.value = null
+                    _bilinmeyenBarkod.value = barkod
+                }
+            } else urunIsle(urun)
         }
+    }
+
+    /** Öneri listesinden seçilen ürün. */
+    fun oneriSecildi(urun: Urun) {
+        barkodSorgu.value = ""
+        urunIsle(urun)
+    }
+
+    private fun urunIsle(urun: Urun) {
+        if (_fiyatGorModu.value) {
+            _fiyatGorModu.value = false
+            _fiyatKarti.value = urun
+            return
+        }
+        _fiyatKarti.value = null
+        _sepet.update { it.ekle(urun, adetAl()) }
+    }
+
+    /** Ürün listesinde seçilen ürünleri birer adet sepete ekler. */
+    fun sepeteEkleBarkodlar(barkodlar: List<String>) = viewModelScope.launch {
+        val urunler = barkodlar.mapNotNull { db.urunDao().bul(it) }
+        _sepet.update { s -> urunler.fold(s) { acc, u -> acc.ekle(u, 1) } }
+        _mesaj.value = "${urunler.size} ürün satış ekranına eklendi."
     }
 
     fun elleEkle(urun: Urun) {
@@ -263,4 +300,56 @@ class SatisViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun urunKaydet(urun: Urun) = viewModelScope.launch { db.urunDao().kaydet(urun) }
+
+    /** Ürünü günceller; barkod değiştiyse eski kayıt silinip yenisi yazılır. Başarılıysa true döner. */
+    fun urunGuncelle(eskiBarkod: String, urun: Urun, bitti: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            if (urun.barkod != eskiBarkod && db.urunDao().bul(urun.barkod) != null) {
+                _mesaj.value = "Bu barkod başka bir üründe kayıtlı: ${urun.barkod}"
+                bitti(false); return@launch
+            }
+            db.withTransaction {
+                if (urun.barkod != eskiBarkod) db.urunDao().sil(eskiBarkod)
+                db.urunDao().kaydet(urun)
+            }
+            // Sepette eski haliyle duruyorsa güncelle
+            _sepet.update { s ->
+                s.copy(satirlar = s.satirlar.map { if (it.urun.barkod == eskiBarkod) it.copy(urun = urun) else it })
+            }
+            bitti(true)
+        }
+    }
+
+    fun urunSil(barkod: String) = viewModelScope.launch {
+        db.urunDao().sil(barkod)
+        _mesaj.value = "Ürün silindi."
+    }
+
+    // ---- Fişler ----
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val fisler: StateFlow<List<Satis>> = raporDonemi
+        .flatMapLatest { d -> val (b, e) = aralik(d); db.satisDao().aralik(b, e) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _acikFis = MutableStateFlow<TamamlananSatis?>(null)
+    val acikFis: StateFlow<TamamlananSatis?> = _acikFis.asStateFlow()
+
+    fun fisAc(satis: Satis) = viewModelScope.launch {
+        _acikFis.value = TamamlananSatis(satis, db.satisDao().satirlar(satis.id))
+    }
+
+    fun fisKapat() { _acikFis.value = null }
+
+    fun fisIptal(satisId: Long) = viewModelScope.launch {
+        val oldu = db.satisDao().fisIptal(satisId)
+        _acikFis.value = null
+        _mesaj.value = if (oldu) "Fiş No $satisId iptal edildi, stoklar geri eklendi." else "Fiş zaten iptal edilmiş."
+    }
+
+    fun fisGonder(context: Context, t: TamamlananSatis) {
+        viewModelScope.launch {
+            val dosya = withContext(Dispatchers.IO) { FisPdf.olustur(context, t.satis, t.satirlar, isletmeAdi) }
+            FisPdf.epostaIleGonder(context, dosya, t.satis.id, null)
+        }
+    }
 }

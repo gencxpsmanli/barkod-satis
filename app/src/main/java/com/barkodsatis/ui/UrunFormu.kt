@@ -28,7 +28,9 @@ fun UrunFormu(
     barkodDegistirilebilir: Boolean,
     kaydet: (Urun) -> Unit,
     iptal: () -> Unit,
+    sil: (() -> Unit)? = null,
 ) {
+    var silOnay by remember { mutableStateOf(false) }
     var barkod by remember { mutableStateOf(baslangic.barkod) }
     var ad by remember { mutableStateOf(baslangic.ad) }
     var fiyat by remember { mutableStateOf(if (baslangic.fiyat > 0) baslangic.fiyat.toString().replace('.', ',') else "") }
@@ -64,6 +66,21 @@ fun UrunFormu(
         confirmButton = {
             TextButton(enabled = gecerli, onClick = { kaydet(Urun(barkod.trim(), ad.trim(), i ?: 0.0, f!!, st ?: 0)) }) { Text("Kaydet") }
         },
-        dismissButton = { TextButton(onClick = iptal) { Text("Vazgeç") } },
+        dismissButton = {
+            androidx.compose.foundation.layout.Row {
+                if (sil != null) TextButton(onClick = { silOnay = true }) { Text("Sil", color = androidx.compose.ui.graphics.Color(0xFFC62828)) }
+                TextButton(onClick = iptal) { Text("Vazgeç") }
+            }
+        },
     )
+
+    if (silOnay && sil != null) {
+        AlertDialog(
+            onDismissRequest = { silOnay = false },
+            title = { Text("Ürün silinsin mi?") },
+            text = { Text("${baslangic.ad} ürün listesinden silinecek. Geçmiş satışlar raporda kalır.") },
+            confirmButton = { TextButton(onClick = { silOnay = false; sil() }) { Text("Sil") } },
+            dismissButton = { TextButton(onClick = { silOnay = false }) { Text("Vazgeç") } },
+        )
+    }
 }

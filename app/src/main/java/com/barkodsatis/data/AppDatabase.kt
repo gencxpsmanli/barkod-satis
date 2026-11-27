@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [Urun::class, Satis::class, SatisSatiri::class], version = 2)
+@Database(entities = [Urun::class, Satis::class, SatisSatiri::class], version = 3)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun urunDao(): UrunDao
     abstract fun satisDao(): SatisDao
@@ -19,10 +19,16 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val GECIS_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE satislar ADD COLUMN iptal INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         @Volatile private var instance: AppDatabase? = null
         fun get(context: Context): AppDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context, AppDatabase::class.java, "barkodsatis.db")
-                .addMigrations(GECIS_1_2)
+                .addMigrations(GECIS_1_2, GECIS_2_3)
                 .build().also { instance = it }
         }
     }
