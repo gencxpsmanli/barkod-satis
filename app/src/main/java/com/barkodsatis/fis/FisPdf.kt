@@ -6,7 +6,6 @@ import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import androidx.core.content.FileProvider
-import com.barkodsatis.data.OdemeTipi
 import com.barkodsatis.data.Satis
 import com.barkodsatis.data.SatisSatiri
 import com.barkodsatis.data.kurus
@@ -40,6 +39,9 @@ object FisPdf {
 
         c.drawText(isletmeAdi.ifBlank { "SATIŞ FİŞİ" }, ortaX, y, baslik); y += 16
         c.drawText("BİLGİ FİŞİ - MALİ DEĞERİ YOKTUR", ortaX, y, Paint(kalin).apply { textAlign = Paint.Align.CENTER }); y += 14
+        if (satis.iadeFisId != null) {
+            c.drawText("İADE FİŞİ (Asıl fiş No: ${satis.iadeFisId})", ortaX, y, Paint(kalin).apply { textAlign = Paint.Align.CENTER }); y += 14
+        }
         c.drawText(SimpleDateFormat("dd.MM.yyyy HH:mm", TR).format(Date(satis.zaman)) + "   Fiş No: ${satis.id}", ortaX, y, orta); y += 10
         c.drawLine(sol, y, sagX, y, normal); y += 14
 
@@ -58,9 +60,9 @@ object FisPdf {
             c.drawText(etiket, sol, y, if (p === sagKalin) kalin else normal); c.drawText(deger, sagX, y, p); y += 14
         }
         toplamSatiri("Ara Toplam", para(satis.brutToplam))
-        if (satis.iskontoToplam > 0) toplamSatiri("Toplam İndirim", "-" + para(satis.iskontoToplam))
+        if (satis.iskontoToplam != 0.0) toplamSatiri("Toplam İndirim", "-" + para(satis.iskontoToplam))
         toplamSatiri("TOPLAM", para(satis.netToplam), sagKalin)
-        toplamSatiri("Ödeme", if (satis.odemeTipi == OdemeTipi.NAKIT) "Nakit" else "Kredi Kartı")
+        toplamSatiri(if (satis.iadeFisId != null) "İade şekli" else "Ödeme", satis.odemeMetni())
         y += 10
         c.drawText("Bu belge bilgi amaçlıdır, mali değeri yoktur.", ortaX, y, orta); y += 12
         c.drawText("Teşekkür ederiz.", ortaX, y, orta)

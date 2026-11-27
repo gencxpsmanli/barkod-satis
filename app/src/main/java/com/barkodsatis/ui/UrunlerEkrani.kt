@@ -41,7 +41,9 @@ fun UrunlerEkrani(vm: SatisViewModel, satisaGit: () -> Unit) {
     var duzenlenen by remember { mutableStateOf<Urun?>(null) }
     var yeni by remember { mutableStateOf(false) }
     var secili by remember { mutableStateOf(setOf<String>()) }
-    var isletme by remember { mutableStateOf(vm.isletmeAdi) }
+    val sadeceKritik by vm.sadeceKritik.collectAsState()
+    val kritikSayisi by vm.kritikSayisi.collectAsState()
+    val kritikSinir by vm.kritikSinir.collectAsState()
 
     val dosyaSec = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.excelAktar(uri)
@@ -60,9 +62,13 @@ fun UrunlerEkrani(vm: SatisViewModel, satisaGit: () -> Unit) {
             }, modifier = Modifier.weight(1f)) { Text("Excel'den ürün aktar") }
             OutlinedButton(onClick = { yeni = true }) { Text("Yeni ürün") }
         }
-        OutlinedTextField(isletme, { isletme = it; vm.isletmeAdi = it }, label = { Text("İşletme adı (fişte görünür)") },
-            singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(arama, { vm.aramaMetni.value = it }, label = { Text("Ürün ara (ad veya barkod)") },
+        if (kritikSayisi > 0 || sadeceKritik) {
+            androidx.compose.material3.FilterChip(
+                selected = sadeceKritik, onClick = { vm.sadeceKritik.value = !sadeceKritik },
+                label = { Text("Kritik stok: $kritikSayisi ürün (≤ $kritikSinir)", color = Color(0xFFC62828)) },
+            )
+        }
+        OutlinedTextField(arama, { vm.aramaMetni.value = it }, label = { Text("Ürün ara (ad veya barkod)") }, enabled = !sadeceKritik,
             singleLine = true, modifier = Modifier.fillMaxWidth())
 
         LazyColumn(Modifier.weight(1f)) {
@@ -73,7 +79,7 @@ fun UrunlerEkrani(vm: SatisViewModel, satisaGit: () -> Unit) {
                     Checkbox(checked = u.barkod in secili, onCheckedChange = { c -> secili = if (c) secili + u.barkod else secili - u.barkod })
                     Column(Modifier.weight(1f)) {
                         Text(u.ad, fontWeight = FontWeight.SemiBold)
-                        Text("${u.barkod}   Stok: ${u.stok}", fontSize = 12.sp, color = if (u.stok <= 0) Color(0xFFC62828) else Color.Gray)
+                        Text("${u.barkod}   Stok: ${u.stok}", fontSize = 12.sp, color = if (u.stok <= kritikSinir) Color(0xFFC62828) else Color.Gray)
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text(para(u.fiyat), fontWeight = FontWeight.Bold)

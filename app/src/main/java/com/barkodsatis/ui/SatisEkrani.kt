@@ -111,6 +111,10 @@ fun SatisEkrani(vm: SatisViewModel) {
     val sonSatis by vm.sonSatis.collectAsState()
     val fiyatGorModu by vm.fiyatGorModu.collectAsState()
     val fiyatKarti by vm.fiyatKarti.collectAsState()
+    val duzenlenenFis by vm.duzenlenenFis.collectAsState()
+    val bekleyenler by vm.bekleyenler.collectAsState()
+    var odemePenceresi by remember { mutableStateOf<OdemeTipi?>(null) }
+    var bekleyenlerAcik by remember { mutableStateOf(false) }
 
     var barkodMetni by remember { mutableStateOf("") }
     var kameraAcik by rememberSaveable { mutableStateOf(false) }
@@ -133,6 +137,15 @@ fun SatisEkrani(vm: SatisViewModel) {
     LaunchedEffect(sepet.satirlar.size) { if (sepet.satirlar.isNotEmpty()) listeDurumu.animateScrollToItem(sepet.satirlar.lastIndex) }
 
     Column(Modifier.fillMaxSize().padding(8.dp)) {
+        duzenlenenFis?.let { f ->
+            Card(Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0))) {
+                Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Fiş No ${f.id} düzenleniyor. Ödeme alınca fiş güncellenir.", Modifier.weight(1f), color = Turuncu, fontSize = 13.sp)
+                    TextButton(onClick = vm::duzenlemeyiBirak) { Text("Vazgeç") }
+                }
+            }
+        }
         // Barkod girişi
         Row(verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
@@ -243,16 +256,58 @@ fun SatisEkrani(vm: SatisViewModel) {
 
         // Ödeme
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { vm.odemeAl(OdemeTipi.NAKIT) }, enabled = sepet.satirlar.isNotEmpty(),
+            Button(onClick = { odemePenceresi = OdemeTipi.NAKIT }, enabled = sepet.satirlar.isNotEmpty(),
                 colors = ButtonDefaults.buttonColors(containerColor = Yesil),
                 modifier = Modifier.weight(1f).height(64.dp)) { Text("NAKİT", fontSize = 20.sp) }
-            Button(onClick = { vm.odemeAl(OdemeTipi.KREDI_KARTI) }, enabled = sepet.satirlar.isNotEmpty(),
+            Button(onClick = { vm.odemeAl(OdemeTipi.KREDI_KARTI, 0.0, sepet.netToplam) }, enabled = sepet.satirlar.isNotEmpty(),
                 colors = ButtonDefaults.buttonColors(containerColor = Mavi),
                 modifier = Modifier.weight(1f).height(64.dp)) { Text("KREDİ KARTI", fontSize = 20.sp) }
         }
-        if (sepet.satirlar.isNotEmpty()) {
-            TextButton(onClick = vm::sepetiTemizle, modifier = Modifier.align(Alignment.End)) { Text("Sepeti temizle", color = Kirmizi) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { odemePenceresi = OdemeTipi.KARISIK }, enabled = sepet.satirlar.isNotEmpty()) { Text("Karışık ödeme") }
+            if (duzenlenenFis == null) {
+                TextButton(onClick = vm::sepetiBeklet, enabled = sepet.satirlar.isNotEmpty()) { Text("Beklet") }
+                if (bekleyenler.isNotEmpty()) TextButton(onClick = { bekleyenlerAcik = true }) {
+                    Text("Bekleyenler (${bekleyenler.size})", color = Turuncu, fontWeight = FontWeight.Bold)
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            if (sepet.satirlar.isNotEmpty()) TextButton(onClick = vm::sepetiTemizle) { Text("Temizle", color = Kirmizi) }
         }
+    }
+
+    odemePenceresi?.let { tip ->
+        OdemePenceresi(tip, sepet.netToplam,
+            tamamla = { t, nakit, kart, alinan -> vm.odemeAl(t, nakit, kart, alinan); odemePenceresi = null },
+            iptal = { odemePenceresi = null })
+    }
+
+    if (bekleyenlerAcik) {
+        val saat = remember { java.text.SimpleDateFormat("HH:mm", java.util.Locale("tr")) }
+        AlertDialog(
+            onDismissRequest = { bekleyenlerAcik = false },
+            title = { Text("Bekleyen sepetler") },
+            text = {
+                Column {
+                    if (bekleyenler.isEmpty()) Text("Bekleyen sepet yok.")
+                    bekleyenler.forEach { b ->
+                        Row(Modifier.fillMaxWidth().clickable { vm.bekleyeniAl(b); bekleyenlerAcik = false }.padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("${saat.format(java.util.Date(b.zaman))}  ·  ${b.sepet.urunAdedi} ürün", fontWeight = FontWeight.SemiBold)
+                                Text(b.sepet.satirlar.joinToString { it.urun.ad }, fontSize = 12.sp, color = Color.Gray,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            Text(para(b.sepet.netToplam), fontWeight = FontWeight.Bold)
+                            IconButton(onClick = { vm.bekleyeniSil(b) }) { Icon(Icons.Default.Delete, "Sil", tint = Kirmizi) }
+                        }
+                        HorizontalDivider()
+                    }
+                    Text("Dokunduğunuz sepet satış ekranına gelir. Ekrandaki sepet doluysa o da bekletmeye alınır.", fontSize = 12.sp, color = Color.Gray)
+                }
+            },
+            confirmButton = { TextButton(onClick = { bekleyenlerAcik = false }) { Text("Kapat") } },
+        )
     }
 
     bilinmeyen?.let { barkod ->
@@ -269,11 +324,15 @@ fun SatisEkrani(vm: SatisViewModel) {
         var eposta by remember(t.satis.id) { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = vm::sonSatisKapat,
-            title = { Text("Satış tamamlandı") },
+            title = { Text("Satış tamamlandı (Fiş No ${t.satis.id})") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("${if (t.satis.odemeTipi == OdemeTipi.NAKIT) "Nakit" else "Kredi kartı"}: ${para(t.satis.netToplam)}",
-                        fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text("Toplam: ${para(t.satis.netToplam)}", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text("Ödeme: ${t.satis.odemeMetni()}")
+                    t.alinan?.let { a ->
+                        Text("Alınan: ${para(a)}")
+                        Text("PARA ÜSTÜ: ${para(t.paraUstu ?: 0.0)}", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Yesil)
+                    }
                     if (t.satis.iskontoToplam > 0) Text("Uygulanan indirim: ${para(t.satis.iskontoToplam)}")
                     Text("Müşteri fiş isterse e-posta adresini yazıp gönderin (mali değeri yoktur).")
                     OutlinedTextField(eposta, { eposta = it.trim() }, label = { Text("E-posta (isteğe bağlı)") }, singleLine = true,
@@ -348,4 +407,57 @@ private fun ToplamSatiri(etiket: String, deger: String, renk: Color = Color.Unsp
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(etiket, color = renk); Text(deger, color = renk)
     }
+}
+
+/** Nakit (para üstü hesaplı) veya karışık (nakit + kart) ödeme penceresi. */
+@Composable
+private fun OdemePenceresi(tip: OdemeTipi, toplam: Double, tamamla: (tip: OdemeTipi, nakit: Double, kart: Double, alinan: Double?) -> Unit, iptal: () -> Unit) {
+    var metin by remember { mutableStateOf("") }
+    val girilen = com.barkodsatis.data.ExcelOkuyucu.sayi(metin)
+    AlertDialog(
+        onDismissRequest = iptal,
+        title = { Text(if (tip == OdemeTipi.NAKIT) "Nakit ödeme" else "Karışık ödeme") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Toplam: ${para(toplam)}", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                if (tip == OdemeTipi.NAKIT) {
+                    OutlinedTextField(metin, { metin = it }, label = { Text("Müşterinin verdiği (boş = tam para)") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal))
+                    // Hızlı tutar tuşları
+                    val oneriler = listOf(50, 100, 200, 500, 1000).filter { it >= toplam }.take(4)
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        oneriler.forEach { t -> OutlinedButton(onClick = { metin = t.toString() }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp)) { Text("$t ₺") } }
+                    }
+                    if (girilen != null) {
+                        if (girilen + 0.001 < toplam) Text("Verilen para tutardan az.", color = Kirmizi)
+                        else Text("PARA ÜSTÜ: ${para((girilen - toplam).kurus())}", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Yesil)
+                    }
+                } else {
+                    OutlinedTextField(metin, { metin = it }, label = { Text("Nakit alınan tutar") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal))
+                    if (girilen != null && girilen >= 0 && girilen <= toplam) {
+                        Text("Nakit: ${para(girilen)}")
+                        Text("Kredi kartından çekilecek: ${para((toplam - girilen).kurus())}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Mavi)
+                    } else if (girilen != null) Text("Nakit tutar 0 ile toplam arasında olmalı.", color = Kirmizi)
+                }
+            }
+        },
+        confirmButton = {
+            val gecerli = if (tip == OdemeTipi.NAKIT) girilen == null || girilen + 0.001 >= toplam
+                else girilen != null && girilen >= 0 && girilen <= toplam
+            TextButton(enabled = gecerli, onClick = {
+                if (tip == OdemeTipi.NAKIT) tamamla(OdemeTipi.NAKIT, toplam, 0.0, girilen)
+                else {
+                    val n = girilen!!.kurus()
+                    // Tamamı tek tarafa düştüyse karışık değil, o ödeme tipi say
+                    when {
+                        n <= 0.0 -> tamamla(OdemeTipi.KREDI_KARTI, 0.0, toplam, null)
+                        n >= toplam -> tamamla(OdemeTipi.NAKIT, toplam, 0.0, null)
+                        else -> tamamla(OdemeTipi.KARISIK, n, (toplam - n).kurus(), null)
+                    }
+                }
+            }) { Text("Satışı tamamla") }
+        },
+        dismissButton = { TextButton(onClick = iptal) { Text("Vazgeç") } },
+    )
 }

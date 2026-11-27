@@ -45,7 +45,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextDecoration
-import com.barkodsatis.data.OdemeTipi
 import com.barkodsatis.data.kurus
 import com.barkodsatis.fis.FisPdf
 import com.barkodsatis.fis.TR
@@ -55,7 +54,7 @@ import java.util.Date
 private val Kirmizi = Color(0xFFC62828)
 
 @Composable
-fun RaporEkrani(vm: SatisViewModel) {
+fun RaporEkrani(vm: SatisViewModel, satisaGit: () -> Unit) {
     val donem by vm.raporDonemi.collectAsState()
     val rapor by vm.rapor.collectAsState()
     val fisler by vm.fisler.collectAsState()
@@ -78,10 +77,10 @@ fun RaporEkrani(vm: SatisViewModel) {
 
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(10.dp)) {
-                Satir("Satış sayısı", r.satisSayisi.toString())
+                Satir("Satış sayısı", r.satisSayisi.toString() + if (r.iadeSayisi > 0) "  (+${r.iadeSayisi} iade)" else "")
                 Satir("Satılan ürün adedi", r.urunAdedi.toString())
-                Satir("Brüt toplam", para(r.brut))
-                Satir("Toplam indirim", "-" + para(r.iskonto), Kirmizi)
+                Satir("Toplam indirim", para(r.iskonto), Kirmizi)
+                if (r.iadeSayisi > 0) Satir("İadeler", para(r.iadeToplam), Kirmizi)
                 Satir("Nakit", para(r.nakit))
                 Satir("Kredi kartı", para(r.kart))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -128,10 +127,10 @@ fun RaporEkrani(vm: SatisViewModel) {
                     Row(Modifier.fillMaxWidth().clickable { vm.fisAc(f) }.padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("Fiş No ${f.id}", fontWeight = FontWeight.SemiBold,
+                            Text("Fiş No ${f.id}" + (f.iadeFisId?.let { "  ·  İADE (Fiş $it)" } ?: ""), fontWeight = FontWeight.SemiBold,
+                                color = if (f.iadeMi) Kirmizi else Color.Unspecified,
                                 textDecoration = if (f.iptal) TextDecoration.LineThrough else null)
-                            Text(saat.format(Date(f.zaman)) + "  ·  " + if (f.odemeTipi == OdemeTipi.NAKIT) "Nakit" else "Kredi kartı",
-                                fontSize = 12.sp, color = Color.Gray)
+                            Text(saat.format(Date(f.zaman)) + "  ·  " + f.odemeMetni(), fontSize = 12.sp, color = Color.Gray)
                         }
                         if (f.iptal) Text("İPTAL  ", color = Kirmizi, fontWeight = FontWeight.Bold)
                         Text(para(f.netToplam), fontWeight = FontWeight.Bold,
@@ -144,14 +143,18 @@ fun RaporEkrani(vm: SatisViewModel) {
         }
     }
 
+    val iade by vm.iade.collectAsState()
+    iade?.let { h -> IadePenceresi(h, vm::iadeYap, vm::fisKapatIade) }
+
     acikFis?.let { t ->
-        var iptalOnay by remember(t.satis.id) { mutableStateOf(false) }
+        var onay by remember(t.satis.id) { mutableStateOf<String?>(null) } // "iptal" veya "sil"
         AlertDialog(
             onDismissRequest = vm::fisKapat,
-            title = { Text("Fiş No ${t.satis.id}" + if (t.satis.iptal) " (İPTAL)" else "") },
+            title = { Text("Fiş No ${t.satis.id}" + (if (t.satis.iadeMi) " · İADE" else "") + if (t.satis.iptal) " (İPTAL)" else "") },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
-                    Text(saat.format(Date(t.satis.zaman)) + "  ·  " + if (t.satis.odemeTipi == OdemeTipi.NAKIT) "Nakit" else "Kredi kartı")
+                    Text(saat.format(Date(t.satis.zaman)) + "  ·  " + t.satis.odemeMetni())
+                    t.satis.iadeFisId?.let { Text("Fiş No $it için yapılan iade", color = Kirmizi) }
                     Spacer(Modifier.height(6.dp))
                     t.satirlar.forEach { l ->
                         val brut = (l.birimFiyat * l.adet).kurus()
@@ -163,20 +166,33 @@ fun RaporEkrani(vm: SatisViewModel) {
                         }
                     }
                     HorizontalDivider(Modifier.padding(vertical = 6.dp))
-                    if (t.satis.iskontoToplam > 0) Satir("İndirim", "-" + para(t.satis.iskontoToplam), Kirmizi)
+                    if (t.satis.iskontoToplam != 0.0) Satir("İndirim", "-" + para(t.satis.iskontoToplam), Kirmizi)
                     Satir("TOPLAM", para(t.satis.netToplam))
-                    if (!t.satis.iptal) {
-                        Spacer(Modifier.height(10.dp))
-                        if (!iptalOnay) {
-                            OutlinedButton(onClick = { iptalOnay = true }, modifier = Modifier.fillMaxWidth()) {
-                                Text("Fişi iptal et", color = Kirmizi)
+                    Spacer(Modifier.height(10.dp))
+                    when (onay) {
+                        null -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            if (!t.satis.iptal && !t.satis.iadeMi) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    OutlinedButton(onClick = { vm.fisDuzenle(t, satisaGit) }, Modifier.weight(1f)) { Text("Düzenle") }
+                                    OutlinedButton(onClick = { vm.iadeBaslat(t) }, Modifier.weight(1f)) { Text("Ürün iade") }
+                                }
                             }
-                        } else {
-                            Text("Bu fiş iptal edilecek, ürünler stoğa geri eklenecek ve rapordan düşülecek. Emin misiniz?", color = Kirmizi)
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (!t.satis.iptal) OutlinedButton(onClick = { onay = "iptal" }, Modifier.weight(1f)) { Text("İptal et", color = Kirmizi) }
+                                OutlinedButton(onClick = { onay = "sil" }, Modifier.weight(1f)) { Text("Sil", color = Kirmizi) }
+                            }
+                        }
+                        else -> {
+                            Text(
+                                if (onay == "iptal") "Bu fiş iptal edilecek: stok etkisi geri alınır, rapordan düşer, listede üstü çizili kalır. Emin misiniz?"
+                                else "Bu fiş tamamen silinecek" + (if (!t.satis.iptal) ", stok etkisi geri alınacak" else "") +
+                                    ". Bu fişe ait iadeler de silinir. Geri alınamaz. Emin misiniz?",
+                                color = Kirmizi,
+                            )
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(onClick = { vm.fisIptal(t.satis.id) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Kirmizi)) { Text("Evet, iptal et") }
-                                TextButton(onClick = { iptalOnay = false }) { Text("Vazgeç") }
+                                Button(onClick = { if (onay == "iptal") vm.fisIptal(t.satis.id) else vm.fisSil(t.satis.id) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Kirmizi)) { Text(if (onay == "iptal") "Evet, iptal et" else "Evet, sil") }
+                                TextButton(onClick = { onay = null }) { Text("Vazgeç") }
                             }
                         }
                     }
@@ -188,6 +204,45 @@ fun RaporEkrani(vm: SatisViewModel) {
             dismissButton = { TextButton(onClick = vm::fisKapat) { Text("Kapat") } },
         )
     }
+}
+
+/** Ürün bazında iade penceresi: her satır için iade edilecek adet seçilir. */
+@Composable
+private fun IadePenceresi(h: IadeHazirligi, iadeYap: (Map<String, Int>) -> Unit, kapat: () -> Unit) {
+    val adetler = remember(h.fis.satis.id) { androidx.compose.runtime.mutableStateMapOf<String, Int>() }
+    val satirlar = h.fis.satirlar.groupBy { it.barkod }.map { (b, l) -> Triple(b, l.first(), l.sumOf { it.adet }) }
+    var toplam = 0.0
+    satirlar.forEach { (b, l, _) ->
+        val n = adetler[b] ?: 0
+        val brut = (l.birimFiyat * n).kurus()
+        toplam += (brut - (brut * l.iskontoYuzde / 100).kurus())
+    }
+    AlertDialog(
+        onDismissRequest = kapat,
+        title = { Text("Fiş No ${h.fis.satis.id} · Ürün iade") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("İade edilecek adetleri seçin. Ürünler stoğa geri eklenir, bugünün raporuna iade olarak yazılır.", fontSize = 12.sp, color = Color.Gray)
+                satirlar.forEach { (b, l, satilan) ->
+                    val kalan = satilan - (h.iadeEdilen[b] ?: 0)
+                    val n = adetler[b] ?: 0
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(l.ad, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            Text("Satılan $satilan" + if (kalan < satilan) ", önceden iade ${satilan - kalan}" else "", fontSize = 11.sp, color = Color.Gray)
+                        }
+                        TextButton(onClick = { if (n > 0) adetler[b] = n - 1 }, enabled = n > 0) { Text("−", fontSize = 20.sp) }
+                        Text("$n", fontWeight = FontWeight.Bold)
+                        TextButton(onClick = { if (n < kalan) adetler[b] = n + 1 }, enabled = n < kalan) { Text("+", fontSize = 20.sp) }
+                    }
+                }
+                HorizontalDivider()
+                Text("İade tutarı: ${para(toplam.kurus())}", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            }
+        },
+        confirmButton = { TextButton(onClick = { iadeYap(adetler.toMap()) }, enabled = adetler.values.any { it > 0 }) { Text("İadeyi kaydet") } },
+        dismissButton = { TextButton(onClick = kapat) { Text("Vazgeç") } },
+    )
 }
 
 @Composable

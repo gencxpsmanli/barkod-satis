@@ -38,10 +38,12 @@ data class Sepet(val satirlar: List<SepetSatiri> = emptyList()) {
 
     fun sil(barkod: String): Sepet = copy(satirlar = satirlar.filterNot { it.urun.barkod == barkod })
 
-    fun satisaDonustur(odeme: OdemeTipi, zaman: Long): Pair<Satis, List<SatisSatiri>> =
+    /** nakit + kart = netToplam olmalı. Tek tip ödemede diğeri 0'dır. */
+    fun satisaDonustur(odeme: OdemeTipi, zaman: Long, nakit: Double, kart: Double): Pair<Satis, List<SatisSatiri>> =
         Satis(
             zaman = zaman, odemeTipi = odeme,
             brutToplam = brutToplam, iskontoToplam = iskontoToplam, netToplam = netToplam,
+            nakitTutar = nakit.kurus(), kartTutar = kart.kurus(),
         ) to satirlar.map {
             SatisSatiri(
                 satisId = 0, barkod = it.urun.barkod, ad = it.urun.ad, adet = it.adet,

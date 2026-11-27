@@ -17,7 +17,7 @@ data class Urun(
     @ColumnInfo(defaultValue = "0") val stok: Int = 0,
 )
 
-enum class OdemeTipi { NAKIT, KREDI_KARTI }
+enum class OdemeTipi(val etiket: String) { NAKIT("Nakit"), KREDI_KARTI("Kredi kartı"), KARISIK("Karışık") }
 
 @Entity(tableName = "satislar")
 data class Satis(
@@ -29,7 +29,18 @@ data class Satis(
     val netToplam: Double,
     /** İptal edilen fiş raporlara girmez, stoğu geri eklenmiştir. */
     @ColumnInfo(defaultValue = "0") val iptal: Boolean = false,
-)
+    /** Ödemenin nakit ve kart kısmı (karışık ödemede ikisi de dolu). İadede eksi değerlidir. */
+    @ColumnInfo(defaultValue = "0") val nakitTutar: Double = 0.0,
+    @ColumnInfo(defaultValue = "0") val kartTutar: Double = 0.0,
+    /** Bu bir iade fişiyse, iade edilen asıl fişin numarası. İade satırlarında adet eksidir. */
+    val iadeFisId: Long? = null,
+) {
+    val iadeMi: Boolean get() = iadeFisId != null
+    fun odemeMetni(): String = when (odemeTipi) {
+        OdemeTipi.KARISIK -> "Nakit ${com.barkodsatis.fis.para(nakitTutar)} + Kart ${com.barkodsatis.fis.para(kartTutar)}"
+        else -> odemeTipi.etiket
+    }
+}
 
 @Entity(
     tableName = "satis_satirlari",
@@ -56,6 +67,7 @@ data class RaporSatiri(
     val satisId: Long,
     val zaman: Long,
     val odemeTipi: OdemeTipi,
+    val iadeFisId: Long?,
     val barkod: String,
     val ad: String,
     val adet: Int,

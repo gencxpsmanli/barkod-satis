@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.PointOfSale
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -27,6 +28,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.barkodsatis.ui.AyarlarEkrani
+import com.barkodsatis.ui.KilitEkrani
 import com.barkodsatis.ui.RaporEkrani
 import com.barkodsatis.ui.SatisEkrani
 import com.barkodsatis.ui.SatisViewModel
@@ -42,18 +45,21 @@ class MainActivity : ComponentActivity() {
                 var sekme by rememberSaveable { mutableIntStateOf(0) }
                 val snackbar = remember { SnackbarHostState() }
                 val mesaj by vm.mesaj.collectAsState()
+                val kilitAcik by vm.kilitAcik.collectAsState()
                 LaunchedEffect(mesaj) { mesaj?.let { snackbar.showSnackbar(it); vm.mesajGosterildi() } }
 
                 Scaffold(
                     snackbarHost = { SnackbarHost(snackbar) },
                     bottomBar = {
                         NavigationBar {
-                            NavigationBarItem(selected = sekme == 0, onClick = { sekme = 0 },
+                            NavigationBarItem(selected = sekme == 0, onClick = { sekme = 0; vm.kilitle() },
                                 icon = { Icon(Icons.Default.PointOfSale, null) }, label = { Text("Satış") })
-                            NavigationBarItem(selected = sekme == 1, onClick = { sekme = 1 },
+                            NavigationBarItem(selected = sekme == 1, onClick = { sekme = 1; vm.kilitle() },
                                 icon = { Icon(Icons.Default.Inventory2, null) }, label = { Text("Ürünler") })
                             NavigationBarItem(selected = sekme == 2, onClick = { sekme = 2 },
                                 icon = { Icon(Icons.Default.Assessment, null) }, label = { Text("Rapor") })
+                            NavigationBarItem(selected = sekme == 3, onClick = { sekme = 3 },
+                                icon = { Icon(Icons.Default.Settings, null) }, label = { Text("Ayarlar") })
                         }
                     },
                 ) { ic ->
@@ -61,7 +67,9 @@ class MainActivity : ComponentActivity() {
                         when (sekme) {
                             0 -> SatisEkrani(vm)
                             1 -> UrunlerEkrani(vm, satisaGit = { sekme = 0 })
-                            else -> RaporEkrani(vm)
+                            else -> if (!kilitAcik) KilitEkrani(vm)
+                                else if (sekme == 2) RaporEkrani(vm, satisaGit = { sekme = 0; vm.kilitle() })
+                                else AyarlarEkrani(vm)
                         }
                     }
                 }
